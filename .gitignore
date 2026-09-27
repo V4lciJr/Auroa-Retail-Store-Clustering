@@ -1,0 +1,26 @@
+# dados (brutos ficam fora do repositório)
+dados/brutos/*
+!dados/brutos/.gitkeep
+dados/processados/*
+!dados/processados/.gitkeep
+
+# ambiente
+.venv/
+venv/
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
+.env
+
+# sistema / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# estado intermediário entre execuções
+.estado/
+estado/
+
+# material do curso (não pode ser publicado)
+docs/*.pdf
