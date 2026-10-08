@@ -33,22 +33,24 @@ Decisões, descobertas e critérios de cada fase estão em **[docs/documentacao.
 
 ## Resultados até aqui
 
-**Features do modelo (6):** venda média por dia (log), ticket médio, efeito da promoção, sazonalidade (log), pico de sábado e distância ao concorrente (log), padronizadas com `StandardScaler`.
+**Features do modelo (6):** venda média por dia, ticket médio, efeito da promoção, volatilidade, sazonalidade e distância ao concorrente, com log1p e padronização (`StandardScaler`).
 
-**Modelo:** K-Means com k = 5 (`SEED = 42`), silhueta de 0,180.
+**Modelo:** K-Means com k = 5 (`SEED = 42`), silhueta de 0,202.
 
-| Cluster | Lojas | Venda média/dia (R$) | Ticket médio (R$) | Efeito da promoção | Distância mediana |
-|---|---|---|---|---|---|
-| 0 | 343 | 7.136 | 11,72 | 40,7% | 5.470 |
-| 1 | 147 | 7.391 | 7,86 | 31,7% | 700 |
-| 2 | 258 | 5.848 | 9,31 | 41,4% | 5.155 |
-| 3 | 179 | 6.119 | 8,99 | 54,5% | 350 |
-| 4 | 188 | 8.477 | 8,34 | 29,3% | 1.135 |
-| Rede | 1.115 | 6.935 | 9,64 | 39,9% | 2.325 |
+| Cluster | Lojas | Venda média/dia (R$) | Ticket médio (R$) | Efeito da promoção | Sazonalidade | Distância mediana |
+|---|---|---|---|---|---|---|
+| 0 | 292 | 5.719 | 8,43 | 45,4% | 0,084 | 840 |
+| 1 | 414 | 7.084 | 11,35 | 34,9% | 0,092 | 5.835 |
+| 2 | 65 | 6.312 | 8,24 | 32,0% | 0,159 | 2.640 |
+| 3 | 165 | 6.125 | 9,78 | 70,8% | 0,094 | 4.150 |
+| 4 | 179 | 9.545 | 8,04 | 26,3% | 0,076 | 770 |
+| Rede | 1.115 | 6.935 | 9,64 | 41,4% | 0,092 | 2.325 |
 
-**Contra o baseline:** nas 6 métricas do modelo, os clusters explicam em média 36,0% da variância (η²), contra 13,2% do `tipo_loja`. Nas métricas fora do modelo o resultado é misto: ganham em volatilidade (38,8% contra 2,0%), empatam em clientes por dia e perdem em proporção de domingos abertos (3,7% contra 70,0%).
+**Estabilidade:** ARI médio de 0,992 na troca de semente, 0,990 na reordenação das linhas e 0,888 em subamostras de 80% das lojas (critério: ≥ 0,80). Em 100 subamostras, 77,2% das lojas ficam no mesmo cluster em mais de 95% das vezes.
 
-**Estabilidade:** ARI médio de 0,900 na troca de semente e 0,907 na reordenação das linhas; 0,754 em subamostras de 80%, abaixo do critério de 0,80.
+**Contra o baseline:** os clusters explicam 28,3% da variância da venda média (η²), contra 2,8% do `tipo_loja`. Ganham em 9 de 10 métricas de negócio, incluindo 3 que ficaram fora do modelo; perdem só na proporção de domingos abertos (6,6% contra 70,0%), coluna retirada do modelo de propósito.
+
+**Revisão do pipeline:** a primeira versão do modelo reprovou no teste de subamostragem (ARI de 0,755). A causa principal foi aplicar log na sazonalidade, o que apagou o grupo das lojas muito sazonais. A comparação entre os pipelines está na seção 3.6 da documentação.
 
 **Em aberto na Fase 5:** nomear os clusters, montar a matriz cluster × área e quantificar o ganho em R$.
 

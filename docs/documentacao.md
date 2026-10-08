@@ -8,12 +8,14 @@ Segmentação das lojas da Aurora Varejo por comparabilidade real, seguindo o CR
 |---|---|---|
 | 1. Entendimento do Negócio | Concluída | — |
 | 2. Entendimento dos Dados | Concluída | `02_entendimento_dados.ipynb` |
-| 3. Preparação dos Dados | Concluída | `03_preparacao_dados.ipynb` |
-| 4. Modelagem | Concluída: K-Means com k = 5 treinado e salvo | `04_modelagem.ipynb` |
+| 3. Preparação dos Dados | Concluída, com o conjunto de features revisado (seção 3.6) | `03_preparacao_dados.ipynb` |
+| 4. Modelagem | Concluída: K-Means com k = 5 treinado e salvo sobre o conjunto final | `04_modelagem.ipynb` |
 | 5. Avaliação | Em andamento: estabilidade, baseline e perfil médio executados | `05_avaliacao.ipynb` |
 | 6. Deploy | Não iniciada | — |
 
 Todos os números deste documento saem das saídas executadas nos notebooks. As figuras ficam em `relatorios/figuras/`; as Fases 2 e 5 não geraram figura (as evidências delas são tabelas).
+
+**Sobre a revisão do pipeline:** a primeira versão do modelo reprovou no teste de estabilidade por subamostragem. O conjunto de features e as transformações foram revisados contra o material de referência do curso, com os dois pipelines medidos pelo mesmo protocolo. A comparação está na seção 3.6. Nos notebooks 03 e 04, as seções anteriores à revisão ficaram como registro e estão marcadas como superadas.
 
 ---
 
@@ -115,7 +117,7 @@ Todos os números deste documento saem das saídas executadas nos notebooks. As 
 
 ## 3. Preparação dos Dados
 
-Notebook: `notebooks/03_preparacao_dados.ipynb`. Saídas: `base_lojas.parquet`, `base_lojas_transformada.parquet`, `X_modelo.parquet` e `modelos/escalonador.joblib`.
+Notebook: `notebooks/03_preparacao_dados.ipynb` (o conjunto final está na seção 14). Saídas: `base_lojas.parquet`, `X_modelo.parquet` e `modelos/escalonador.joblib`.
 
 ### 3.1 Tratamentos
 
@@ -128,12 +130,12 @@ Notebook: `notebooks/03_preparacao_dados.ipynb`. Saídas: `base_lojas.parquet`, 
 
 Teste: nas lojas completas, recalcular a feature sem o 2º semestre de 2014, que é o que as 180 lojas incompletas sofrem.
 
-| Feature | Variação mediana sem o período | Spearman entre versões | Decisão |
+| Feature | Variação mediana sem o período | Spearman entre versões | Conclusão |
 |---|---|---|---|
-| Volatilidade | −0,2% | 0,994 | Calculada no histórico inteiro |
-| Sazonalidade | +8,3% | 0,921 | Calculada na janela comum (sem o 2º sem/2014 para todas as lojas) |
+| Volatilidade | −0,2% | 0,994 | O buraco não distorce; calculada no histórico inteiro |
+| Sazonalidade | +8,3% | 0,921 | O buraco distorce; precisa de tratamento |
 
-Na janela comum, todas as lojas têm os 12 meses do ano representados.
+Duas formas de tratar a sazonalidade foram construídas. A que entra no modelo é a normalização pelo ano (seção 3.3); a versão em janela comum (sem o 2º semestre de 2014 para todas as lojas) ficou na base como `sazonalidade_janela_comum`. A correlação entre as duas é de 0,86.
 
 ### 3.3 Features criadas (uma linha por loja)
 
@@ -142,95 +144,123 @@ Na janela comum, todas as lojas têm os 12 meses do ano representados.
 | Porte | `venda_media_dia` | Faturamento médio por dia de operação |
 | Porte | `clientes_medios_dia` | Clientes médios por dia de operação |
 | Porte | `ticket_medio` | Venda média ÷ clientes médios (razão de médias) |
-| Promoção | `efeito_promo` | Venda média com promo ÷ sem promo − 1, só de segunda a sexta |
+| Promoção | `efeito_promo` | Venda média nos dias com promoção ÷ venda média nos dias sem promoção − 1 |
 | Ritmo | `volatilidade` | Coeficiente de variação da venda diária |
-| Ritmo | `sazonalidade` | Coeficiente de variação entre as médias dos 12 meses |
+| Ritmo | `sazonalidade` | Cada mês dividido pela média do próprio ano da loja; desvio padrão entre os 12 meses |
 | Formato | `prop_domingos_abertos` | Domingos abertos ÷ domingos registrados |
 | Formato | `pico_sabado` | Venda média de sábado ÷ venda média de segunda a sexta |
-| Concorrência | `distancia_concorrente` | Cadastro, com imputação e versão em log |
+| Concorrência | `distancia_concorrente` | Cadastro, com imputação |
 
-- `efeito_promo` é restrito a segunda–sexta porque a promoção nunca ocorre no fim de semana (0% dos sábados e domingos). Média da rede: +39,9%; faixa de +1,9% a +102,1%; nenhuma loja com efeito negativo.
-- Base final: 1.115 lojas × 14 colunas, sem nulos (as 9 features acima mais `distancia_concorrente_log`, `distancia_imputada`, `promo_continua`, `tipo_loja` e `sortimento`).
+Colunas alternativas, mantidas só para descrição:
+
+| Coluna | Diferença para a versão do modelo |
+|---|---|
+| `efeito_promo_dias_uteis` | Compara promoção × sem promoção só de segunda a sexta (a promoção nunca ocorre no fim de semana) |
+| `sazonalidade_janela_comum` | Coeficiente de variação entre os 12 meses, sem o 2º semestre de 2014 para todas as lojas |
+
+- `efeito_promo`: média da rede de +41,4%, faixa de −6,9% a +144,9%, 1 loja com efeito negativo.
+- `efeito_promo_dias_uteis`: média de +39,9%, faixa de +1,9% a +102,1%. A correlação entre as duas versões é de 0,76.
+- Base final (`base_lojas.parquet`): 1.115 lojas × 16 colunas, sem nulos.
 
 ### 3.4 Forma das distribuições
 
-Critério: transformar quando |skew| > 1.
+Tratamento final: log1p nas seis features do modelo, depois padronização.
 
-| Variável | Skew original | Transformação | Skew depois |
-|---|---|---|---|
-| `venda_media_dia` | 1,75 | log1p | 0,30 |
-| `clientes_medios_dia` | 3,03 | log1p | 0,76 |
-| `distancia_concorrente` | 2,93 | log1p | −0,35 |
-| `sazonalidade` | 2,01 | log | 0,06 |
-| `ticket_medio` | 0,28 | nenhuma | — |
-| `efeito_promo` | 0,61 | nenhuma | — |
-| `volatilidade` | 0,72 | nenhuma | — |
-| `pico_sabado` | −0,07 | nenhuma | — |
-| `prop_domingos_abertos` | 5,97 | nenhuma resolve | 5,56 a 5,97 |
+| Feature do modelo | Skew original | Skew após log1p |
+|---|---|---|
+| `venda_media_dia` | 1,75 | 0,30 |
+| `ticket_medio` | 0,28 | −0,30 |
+| `efeito_promo` | 0,68 | 0,22 |
+| `volatilidade` | 0,72 | 0,55 |
+| `sazonalidade` | 2,20 | 1,86 |
+| `distancia_concorrente` | 2,93 | −0,35 |
 
 ![Histogramas de clientes, sazonalidade e proporção de domingos, antes e depois do log1p](../relatorios/figuras/03_histogramas_assimetria.png)
 
 **Figura 1 — `03_histogramas_assimetria.png`.** Linha de cima: distribuição original; linha de baixo: após log1p.
 
 - **Clientes médios por dia:** a cauda à direita some com o log1p (skew 3,03 → 0,76).
-- **Sazonalidade:** o log1p quase não muda a forma (2,01 → 1,73). Os valores vão de 0,03 a 0,33, faixa em que log1p(x) ≈ x. Por isso a sazonalidade recebeu log puro (skew 0,06).
+- **Sazonalidade:** o log1p quase não muda a forma (2,20 → 1,86), porque os valores vão de 0,03 a 0,34, faixa em que log1p(x) ≈ x.
 - **Proporção de domingos abertos:** 1.082 lojas (97,0%) estão em zero e só 33 abrem. Log1p, binarização, Yeo-Johnson e quantil deixam o skew entre 5,56 e 5,97: nenhuma transformação cria variação onde há um valor só. A coluna ficou fora do modelo e segue como descrição.
 
-O Yeo-Johnson foi testado como alternativa ao log e ordena as lojas exatamente da mesma forma (Spearman 1,0 nas quatro variáveis).
+**A cauda da sazonalidade é um grupo real, não ruído.** A primeira versão do pipeline aplicou log puro na sazonalidade para zerar a assimetria. Isso apagou o grupo das lojas muito sazonais e foi a principal causa da instabilidade do primeiro modelo (seção 3.6):
+
+| Sazonalidade | Skew | Lojas acima de 2 desvios | z máximo |
+|---|---|---|---|
+| Original | 2,20 | 31 | 8,94 |
+| log1p | 1,86 | 31 | 8,28 |
+| log | 0,07 | 27 | 4,85 |
 
 ### 3.5 Correlação entre as candidatas
 
-![Matriz de correlação de Pearson entre as 10 features candidatas](../relatorios/figuras/03_matriz_correlacao.png)
+![Matriz de correlação de Pearson entre as 10 candidatas, após log1p](../relatorios/figuras/03_matriz_correlacao.png)
 
 **Figura 2 — `03_matriz_correlacao.png`.** Pares com |r| ≥ 0,4:
 
-| Par | Pearson | Spearman |
-|---|---|---|
-| venda (log) × clientes (log) | 0,82 | 0,80 |
-| efeito_promo × volatilidade | 0,63 | 0,66 |
-| volatilidade × pico_sabado | −0,62 | −0,61 |
-| clientes (log) × ticket_medio | −0,52 | −0,50 |
-| volatilidade × sazonalidade (log) | 0,44 | 0,40 |
-| ticket_medio × distância (log) | 0,44 | 0,47 |
+| Par | Pearson |
+|---|---|
+| `venda_media_dia` × `clientes_medios_dia` | 0,82 |
+| `efeito_promo` × `pico_sabado` | −0,81 |
+| `efeito_promo` × `volatilidade` | 0,81 |
+| `volatilidade` × `pico_sabado` | −0,65 |
+| `clientes_medios_dia` × `ticket_medio` | −0,54 |
+| `ticket_medio` × `distancia_concorrente` | 0,45 |
 
-Duas redundâncias foram confirmadas com teste próprio:
+- **Clientes:** venda = clientes × ticket é identidade exata (erro máximo 0,0). Manter os três seria contar o porte duas vezes; `clientes_medios_dia` ficou fora.
+- **`efeito_promo` × `pico_sabado` (−0,81):** os dias sem promoção incluem os sábados, então parte do efeito medido é o padrão semanal. Na versão só com dias úteis, a correlação com `pico_sabado` é de −0,26.
+- **`efeito_promo` × `volatilidade` (0,81):** par mantido de propósito. A promoção interessa ao Trade e a volatilidade ao Supply; o preço é dar peso maior a essa dimensão no modelo.
 
-- **Clientes:** venda = clientes × ticket é identidade exata (erro máximo 0,0). Em log, clientes + ticket explicam 99,0% da venda (R²). Manter os três seria contar o porte duas vezes.
-- **Volatilidade:** efeito_promo + pico_sabado + sazonalidade explicam 76,8% dela (R²). Dentro de cada regime de promoção, a volatilidade média de segunda a sexta cai de 0,255 para 0,192, e a correlação com `efeito_promo` cai de 0,63 para 0,27.
+### 3.6 Revisão do pipeline e features do modelo
 
-### 3.6 Features do modelo
+O primeiro modelo usava `pico_sabado` no lugar de `volatilidade`, o efeito da promoção só em dias úteis, a sazonalidade em janela comum e log apenas nas colunas assimétricas (log puro na sazonalidade). Em k = 5, ele reprovou no teste de subamostragem. Quatro pipelines foram medidos pelo mesmo protocolo: 30 trocas de semente, 30 reordenações e 100 subamostras de 80% das lojas.
 
-| Candidata | Decisão | Motivo |
-|---|---|---|
-| `venda_media_dia_log` | **entra** | Porte |
-| `ticket_medio` | **entra** | Modelo de negócio (correlação 0,05 com a venda) |
-| `efeito_promo` | **entra** | Resposta à promoção |
-| `sazonalidade_log` | **entra** | Variação ao longo do ano |
-| `pico_sabado` | **entra** | Padrão semanal |
-| `distancia_concorrente_log` | **entra** | Contexto competitivo |
-| `clientes_medios_dia_log` | validação | Redundante com venda e ticket |
-| `volatilidade` | validação | 76,8% explicada por três features que já entram |
-| `prop_domingos_abertos` | descrição | 97,0% de zeros |
-| `promo_continua` | descrição | Política da empresa (decisão da Fase 2) |
+| Pipeline (k = 5) | Silhueta | ARI semente | ARI reordenação | ARI subamostra | Subamostras abaixo de 0,80 | Menor / maior cluster |
+|---|---|---|---|---|---|---|
+| 1. Anterior (log na sazonalidade) | 0,180 | 0,900 | 0,907 | 0,755 | 51% | 147 / 343 |
+| 2. Anterior, trocando só log por log1p na sazonalidade | 0,183 | 0,893 | 0,900 | 0,815 | 24% | 71 / 346 |
+| 3. Features anteriores + log1p nas seis | 0,184 | 0,982 | 0,986 | 0,892 | 13% | 65 / 387 |
+| 4. Features finais + log1p nas seis | 0,202 | 0,992 | 0,990 | 0,898 | 14% | 65 / 414 |
 
-Decisão do Valci: seguir com estas 6 features, e não com o conjunto da apostila (que usa `volatilidade` no lugar de `pico_sabado`). O efeito dessa troca foi medido na Fase 4 (seção 4.4).
+Variância explicada (η², em %) pelos clusters de cada pipeline:
 
-As 6 features foram padronizadas com `StandardScaler` (média 0, desvio 1). Matriz final: 1.115 × 6, sem nulos.
+| Métrica | `tipo_loja` | Pipeline 1 | Pipeline 3 | Pipeline 4 |
+|---|---|---|---|---|
+| `venda_media_dia` | 2,8 | 14,5 | 16,5 | 28,3 |
+| `ticket_medio` | 42,3 | 54,1 | 53,5 | 50,6 |
+| `clientes_medios_dia` | 25,5 | 25,3 | 27,2 | 36,7 |
+| `efeito_promo` | 8,4 | 45,0 | 45,4 | 57,8 |
+| `efeito_promo_dias_uteis` | 6,0 | 39,2 | 36,1 | 29,0 |
+| `volatilidade` | 2,0 | 38,8 | 42,4 | 60,8 |
+| `sazonalidade` | 3,1 | 31,9 | 35,4 | 43,2 |
+| `sazonalidade_janela_comum` | 2,9 | 41,3 | 44,1 | 33,9 |
+| `pico_sabado` | 22,4 | 47,6 | 48,7 | 43,4 |
+| `distancia_concorrente` | 2,5 | 19,6 | 20,9 | 20,7 |
+| **Média** | 11,8 | 35,7 | 37,0 | 40,5 |
 
-| Feature | Média aprendida | Desvio aprendido |
-|---|---|---|
-| `venda_media_dia_log` | 8,7934 | 0,3138 |
-| `ticket_medio` | 9,6438 | 1,9860 |
-| `efeito_promo` | 0,3995 | 0,1266 |
-| `sazonalidade_log` | −2,3802 | 0,2603 |
-| `pico_sabado` | 0,8173 | 0,2160 |
-| `distancia_concorrente_log` | 7,6457 | 1,5495 |
+- A estabilidade vem da transformação: com log1p nas seis, o conjunto anterior (pipeline 3) empata com o final (0,892 contra 0,898).
+- A escolha das features decide o poder de explicação: o pipeline 4 explica 28,3% da venda, contra 16,5% do pipeline 3. A venda é a métrica da meta.
+- O pipeline 4 foi adotado.
+
+**Features do modelo (6):**
+
+| Feature | Dimensão | Média aprendida (em log1p) | Desvio aprendido (em log1p) |
+|---|---|---|---|
+| `venda_media_dia` | Porte | 8,7934 | 0,3138 |
+| `ticket_medio` | Padrão de compra | 2,3473 | 0,1898 |
+| `efeito_promo` | Resposta à promoção | 0,3387 | 0,1255 |
+| `volatilidade` | Oscilação diária | 0,2392 | 0,0453 |
+| `sazonalidade` | Variação ao longo do ano | 0,0873 | 0,0244 |
+| `distancia_concorrente` | Contexto competitivo | 7,6457 | 1,5495 |
+
+Ficam fora do modelo: `clientes_medios_dia` (redundante com venda e ticket), `pico_sabado` (padrão semanal já presente no efeito da promoção e na volatilidade), `prop_domingos_abertos` (97,0% de zeros), `promo_continua` (política da empresa), `tipo_loja` e `sortimento` (baseline).
+
+Matriz final (`X_modelo.parquet`): 1.115 × 6, sem nulos, média 0 e desvio 1. A loja mais sazonal fica a 8,29 desvios da média.
 
 ---
 
 ## 4. Modelagem
 
-Notebook: `notebooks/04_modelagem.ipynb`. Saídas: `modelos/kmeans_k5.joblib` e `base_lojas_clusters.parquet`.
+Notebook: `notebooks/04_modelagem.ipynb` (a modelagem sobre o conjunto final está na seção 6). Saídas: `modelos/kmeans_k5.joblib` e `base_lojas_clusters.parquet`.
 
 ### 4.1 K-Means de k = 2 a 10
 
@@ -238,121 +268,108 @@ Notebook: `notebooks/04_modelagem.ipynb`. Saídas: `modelos/kmeans_k5.joblib` e 
 
 | k | Inércia | Silhueta | Menor cluster | Maior cluster |
 |---|---|---|---|---|
-| 2 | 5.500,9 | 0,178 | 513 | 602 |
-| 3 | 4.707,0 | 0,176 | 344 | 417 |
-| 4 | 4.238,8 | 0,183 | 181 | 397 |
-| 5 | 3.890,5 | 0,180 | 147 | 343 |
-| 6 | 3.583,7 | 0,175 | 129 | 274 |
-| 7 | 3.364,2 | 0,177 | 77 | 263 |
-| 8 | 3.190,9 | 0,159 | 97 | 206 |
-| 9 | 3.033,8 | 0,159 | 65 | 181 |
-| 10 | 2.905,5 | 0,158 | 64 | 179 |
+| 2 | 5.338,8 | 0,187 | 512 | 603 |
+| 3 | 4.439,0 | 0,198 | 316 | 458 |
+| 4 | 3.989,6 | 0,199 | 133 | 442 |
+| 5 | 3.632,6 | 0,202 | 65 | 414 |
+| 6 | 3.366,5 | 0,187 | 62 | 388 |
+| 7 | 3.121,7 | 0,170 | 64 | 253 |
+| 8 | 2.959,4 | 0,170 | 39 | 231 |
+| 9 | 2.817,1 | 0,172 | 31 | 223 |
+| 10 | 2.680,9 | 0,163 | 22 | 193 |
 
 ![Curva do cotovelo (inércia) e silhueta média para k de 2 a 10](../relatorios/figuras/04_cotovelo_silhueta.png)
 
 **Figura 3 — `04_cotovelo_silhueta.png`.**
 
-- **Cotovelo (esquerda):** a inércia cai de forma suave, sem dobra evidente. O cotovelo geométrico (ponto mais distante da reta entre k = 2 e k = 10) é k = 5, com distância 0,245; k = 4 (0,236) e k = 6 (0,239) ficam muito próximos.
-- **Silhueta (direita):** praticamente plana, entre 0,158 e 0,183. Ela não separa os candidatos de k = 2 a 7 e só cai a partir de k = 8.
-- **Contra o acaso:** na mesma base com cada coluna embaralhada, a silhueta fica entre 0,117 e 0,125. O ganho da base real é de 0,036 a 0,066, e a inércia real fica de 6,7% a 19,4% abaixo da referência. A estrutura existe, mas a separação entre os grupos é baixa.
+- **Cotovelo (esquerda):** a inércia cai de forma suave, sem dobra evidente. O cotovelo geométrico (ponto mais distante da reta entre k = 2 e k = 10) é k = 5, com distância 0,267; k = 4 (0,258) e k = 6 (0,242) ficam próximos.
+- **Silhueta (direita):** máxima em k = 5 (0,202), quase empatada com k = 3 (0,198) e k = 4 (0,199); cai a partir de k = 6.
+- **Contra o acaso:** na mesma base com cada coluna embaralhada, a silhueta fica entre 0,117 e 0,129. O ganho da base real é de 0,039 a 0,081 (0,078 em k = 5). A estrutura existe, mas a separação entre os grupos é baixa.
 
 ### 4.2 Segunda opinião: clusterização hierárquica (Ward)
 
 ![Dendrograma de Ward truncado nos últimos 30 grupos](../relatorios/figuras/04_dendrograma.png)
 
-**Figura 4 — `04_dendrograma.png`.** Cada folha é um grupo, com o número de lojas entre parênteses. Quanto maior o trecho vertical sem fusão, mais natural é cortar ali.
+**Figura 4 — `04_dendrograma.png`.** Cada folha é um grupo, com o número de lojas entre parênteses. Quanto maior a faixa de altura sem fusão, mais natural é cortar ali.
 
-| Corte em | Altura em que os grupos se formam | Altura da próxima fusão | Salto relativo |
-|---|---|---|---|
-| 2 grupos | 37,31 | 44,68 | 19,8% |
-| 3 grupos | 27,65 | 37,31 | 34,9% |
-| 4 grupos | 26,00 | 27,65 | 6,4% |
-| 5 grupos | 20,63 | 26,00 | 26,0% |
-| 6 grupos | 20,07 | 20,63 | 2,8% |
+| Corte em | Faixa de altura do corte | Folga |
+|---|---|---|
+| 2 grupos | 39,90 a 42,82 | 2,93 |
+| 3 grupos | 30,94 a 39,90 | 8,95 |
+| 4 grupos | 26,99 a 30,94 | 3,95 |
+| 5 grupos | 26,33 a 26,99 | 0,66 |
+| 6 grupos | 22,93 a 26,33 | 3,40 |
+| 7 grupos | 17,78 a 22,93 | 5,15 |
+| 8 grupos | 16,96 a 17,78 | 0,82 |
 
-- Os maiores saltos estão nos cortes em 3 grupos (34,9%) e em 5 grupos (26,0%). De 6 a 14 grupos, nenhum salto passa de 10%.
-- O hierárquico não reproduz o K-Means: o ARI entre os dois métodos vai de 0,32 a 0,56 (0,412 em k = 5), e a silhueta do hierárquico é menor em todos os k (0,124 contra 0,180 em k = 5).
+- As maiores folgas estão nos cortes em 3 grupos (8,95) e em 7 grupos (5,15). O corte em 5 grupos tem folga pequena (0,66): o dendrograma aponta a faixa de 3 a 7 grupos, sem destacar o 5.
+- O hierárquico não reproduz o K-Means: o ARI entre os dois métodos vai de 0,31 a 0,45 (0,387 em k = 5), e a silhueta do hierárquico é menor (0,135 contra 0,202 em k = 5).
 - Custo: a matriz de distâncias cresce com n². Medido nesta máquina: 0,011 s para 1.115 lojas e 2,44 s para 10.000. Calculado: 0,4 GB de memória para 10.000 pontos e 40 GB para 100.000.
 
 ### 4.3 Candidatos de k contra os critérios da Fase 1
 
-Candidatos: k = 2, 3, 5 e 8. Estabilidade medida em 30 repetições de cada teste (ARI médio).
+Estabilidade medida em 30 repetições de cada teste (ARI médio). O η² médio é a média de 8 métricas de negócio; o gap anual é a soma, nas lojas abaixo da mediana do próprio cluster, da distância até essa mediana.
 
-| k | Clusters sem traço forte | Menor cluster | ARI semente | ARI reordenação | ARI subamostra 80% |
-|---|---|---|---|---|---|
-| 2 | 1 | 513 | 0,982 | 0,975 | 0,879 |
-| 3 | 0 | 344 | 0,992 | 0,993 | 0,937 |
-| 5 | 0 | 147 | 0,900 | 0,907 | 0,754 |
-| 8 | 1 | 97 | 0,852 | 0,844 | 0,734 |
+| k | Silhueta | ARI semente | ARI reordenação | ARI subamostra 80% | η² médio (%) | η² da venda (%) | Gap anual (R$ mi) | Menor cluster |
+|---|---|---|---|---|---|---|---|---|
+| 2 | 0,187 | 1,000 | 1,000 | 0,859 | 20,3 | 10,3 | 211,5 | 512 |
+| 3 | 0,198 | 0,992 | 0,990 | 0,925 | 30,0 | 13,6 | 201,5 | 316 |
+| 4 | 0,199 | 0,984 | 0,984 | 0,911 | 37,3 | 15,9 | 207,6 | 133 |
+| 5 | 0,202 | 0,992 | 0,990 | 0,888 | 42,7 | 28,3 | 205,5 | 65 |
+| 6 | 0,187 | 0,949 | 0,951 | 0,737 | 43,9 | 34,8 | 189,8 | 62 |
+| 8 | 0,170 | 0,655 | 0,671 | 0,672 | 49,6 | 35,5 | 178,3 | 39 |
 
-"Traço forte" = centroide com |z| ≥ 0,75 em pelo menos uma feature.
+Referência do `tipo_loja`: η² médio de 13,6% e η² da venda de 2,8%.
 
-Variância explicada (η², em %, médias sobre as métricas transformadas) e prévia do gap até a mediana dos pares:
+- k = 5 é o maior k que passa nos três testes de estabilidade (ARI ≥ 0,80), e tem a maior silhueta.
+- De k = 4 para k = 5, a venda explicada sobe de 15,9% para 28,3%.
+- k = 6 e k = 8 explicam mais, mas reprovam na subamostragem (0,737 e 0,672).
+- Decisão: k = 5.
 
-| Segmentação | η² no modelo | η² fora do modelo | Gap anual (R$ mi) | CV da venda no grupo |
-|---|---|---|---|---|
-| Rede inteira | — | — | 228,10 | 0,34 |
-| `tipo_loja` | 14,1 | 30,4 | 232,40 | 0,35 |
-| Cluster k = 2 | 17,8 | 5,4 | 226,80 | 0,34 |
-| Cluster k = 3 | 29,6 | 23,4 | 197,99 | 0,30 |
-| Cluster k = 5 | 41,8 | 23,5 | 212,53 | 0,31 |
-| Cluster k = 8 | 52,3 | 34,5 | 176,31 | 0,26 |
+### 4.4 Registro: o primeiro modelo
 
-- Faturamento anual estimado da rede: R$ 2.346 mi. Em k = 5, capturar 25% do gap equivale a R$ 53,13 mi.
-- Tipo b (17 lojas): fica em 1 cluster em k = 2, em 2 clusters em k = 3 (16 de 17 juntas) e em 3 clusters em k = 5 (12 de 17 juntas, num cluster de 188 lojas).
-- k = 3 é o mais estável; k = 5 explica mais variância (41,8% contra 29,6%) e mantém todos os clusters com traço forte, ao custo de estabilidade menor. k = 8 explica ainda mais (52,3%), mas tem um cluster sem traço forte e a menor estabilidade dos quatro.
-
-### 4.4 Teste: `pico_sabado` × `volatilidade` (conjunto da apostila), em k = 5
-
-| Conjunto | Silhueta | ARI semente | ARI subamostra 80% | Menor cluster |
-|---|---|---|---|---|
-| Nosso (com `pico_sabado`) | 0,180 | 0,900 | 0,754 | 147 |
-| Apostila (com `volatilidade`) | 0,181 | 0,977 | 0,755 | 154 |
-| Os dois (7 features) | 0,165 | 0,803 | 0,639 | 156 |
-| Nenhum dos dois (5 features) | 0,186 | 0,954 | 0,826 | 153 |
-
-- Em k = 5, o conjunto da apostila é mais estável à troca de semente (0,977 contra 0,900) e empata na subamostra (0,755 contra 0,754).
-- O resultado depende do k: o nosso conjunto é mais estável em k = 3 (subamostra 0,937 contra 0,853) e em k = 4 (0,906 contra 0,817); o da apostila, em k = 6 (0,937 contra 0,821).
-- Retirando uma feature por vez do nosso conjunto, a que mais pesa na instabilidade é `efeito_promo`: sem ela, o ARI de subamostra sobe para 0,942.
-- O conjunto com `pico_sabado` foi mantido.
+O primeiro modelo (pipeline 1 da seção 3.6) também usava k = 5. Tinha inércia de 3.890,5, silhueta de 0,180 e clusters de 343, 147, 258, 179 e 188 lojas. Reprovou na subamostragem (ARI 0,754), e uma solução de inércia 0,17% menor movia 53 lojas. As seções 1 a 5 do notebook 04 guardam essa análise.
 
 ### 4.5 Modelo final: K-Means com k = 5
 
-Inércia 3.890,5 e silhueta 0,180. O maior cluster tem 2,33× o tamanho do menor.
+Inércia de 3.632,6 e silhueta de 0,202. Com `n_init = 500`, a inércia é de 3.632,5 e só 2 lojas mudam de cluster (ARI 0,997): o modelo salvo é, na prática, a melhor solução que o K-Means encontra.
 
 | Cluster | Lojas | % da rede | Silhueta média | % com silhueta negativa |
 |---|---|---|---|---|
-| 0 | 343 | 30,8 | 0,229 | 0,9 |
-| 1 | 147 | 13,2 | 0,092 | 22,4 |
-| 2 | 258 | 23,1 | 0,224 | 0,0 |
-| 3 | 179 | 16,1 | 0,129 | 12,3 |
-| 4 | 188 | 16,9 | 0,146 | 11,2 |
+| 0 | 292 | 26,2 | 0,165 | 5,1 |
+| 1 | 414 | 37,1 | 0,278 | 0,0 |
+| 2 | 65 | 5,8 | 0,079 | 33,8 |
+| 3 | 165 | 14,8 | 0,198 | 7,9 |
+| 4 | 179 | 16,1 | 0,131 | 18,4 |
 
 Centroides em desvios-padrão da rede (z):
 
 | Feature | C0 | C1 | C2 | C3 | C4 |
 |---|---|---|---|---|---|
-| `venda_media_dia_log` | 0,16 | 0,19 | −0,50 | −0,36 | 0,58 |
-| `ticket_medio` | 1,04 | −0,90 | −0,17 | −0,33 | −0,66 |
-| `efeito_promo` | 0,06 | −0,65 | 0,12 | 1,15 | −0,84 |
-| `sazonalidade_log` | −0,02 | 1,21 | 0,20 | 0,06 | −1,23 |
-| `pico_sabado` | 0,70 | 0,55 | −1,07 | −0,33 | 0,07 |
-| `distancia_concorrente_log` | 0,59 | −0,53 | 0,66 | −1,15 | −0,47 |
+| `venda_media_dia` | −0,56 | 0,14 | −0,26 | −0,37 | 1,02 |
+| `ticket_medio` | −0,59 | 0,84 | −0,72 | 0,12 | −0,84 |
+| `efeito_promo` | 0,26 | −0,34 | −0,54 | 1,54 | −0,87 |
+| `volatilidade` | 0,08 | −0,35 | 0,70 | 1,56 | −1,02 |
+| `sazonalidade` | −0,28 | 0,04 | 2,44 | 0,09 | −0,60 |
+| `distancia_concorrente` | −0,70 | 0,62 | 0,21 | 0,40 | −0,73 |
 
-O maior cluster (0) não é um "resto": tem a maior silhueta média e menos de 1% das lojas com silhueta negativa. Os clusters 1 e 3 são os menos coesos.
+- O maior cluster (1, com 37,1% da rede) é o mais coeso: maior silhueta e nenhuma loja com silhueta negativa.
+- O menor cluster (2, com 65 lojas) é definido pela sazonalidade (+2,44 desvios). É o de menor silhueta: 33,8% das suas lojas estão mais perto de outro grupo.
 
-Variáveis binárias que ficaram fora do modelo:
+Variáveis que ficaram fora do modelo:
 
-| Cluster | `promo_continua` (%) | Lojas que abrem domingo | Distância imputada |
-|---|---|---|---|
-| 0 | 62,4 | 3 | 0 |
-| 1 | 46,3 | 13 | 0 |
-| 2 | 43,0 | 4 | 3 |
-| 3 | 68,2 | 0 | 0 |
-| 4 | 29,8 | 13 | 0 |
-| Rede | 51,2 | 33 | 3 |
+| Cluster | `promo_continua` (%) | Lojas que abrem domingo | Tipo a | Tipo b | Tipo c | Tipo d |
+|---|---|---|---|---|---|---|
+| 0 | 50,0 | 3 | 199 | 2 | 51 | 40 |
+| 1 | 57,5 | 1 | 113 | 0 | 36 | 265 |
+| 2 | 53,8 | 13 | 38 | 2 | 22 | 3 |
+| 3 | 55,8 | 3 | 127 | 0 | 9 | 29 |
+| 4 | 33,5 | 13 | 125 | 13 | 30 | 11 |
+| Rede | 51,2 | 33 | 602 | 17 | 148 | 348 |
 
-Associação com os clusters: V de Cramér 0,269 para `promo_continua` e 0,190 para abrir domingo.
+- Associação com os clusters: V de Cramér de 0,166 para `promo_continua` e de 0,288 para abrir domingo.
+- 26 das 33 lojas que abrem domingo estão nos clusters 2 e 4, sem que a coluna de domingo tenha entrado no modelo.
+- 13 das 17 lojas do tipo b estão no cluster 4; 265 das 348 do tipo d estão no cluster 1.
 
 ---
 
@@ -364,42 +381,33 @@ Notebook: `notebooks/05_avaliacao.ipynb`. Os critérios da Fase 1 são cobrados 
 
 Reexecutar com a mesma semente e a mesma base devolve exatamente os mesmos grupos (ARI 1,0 em 5 reexecuções).
 
-| Teste (30 execuções) | ARI médio | ARI mínimo | Execuções abaixo de 0,80 | % de lojas que trocam (média) |
-|---|---|---|---|---|
-| Troca de semente | 0,900 | 0,742 | 3 | 5,1 |
-| Reordenação das linhas | 0,907 | 0,706 | 2 | 4,8 |
-| Subamostra de 80% | 0,754 | 0,502 | 16 | 14,2 |
+| Teste (30 execuções) | ARI médio | ARI mínimo | Execuções abaixo de 0,80 | % de lojas que trocam (média) | % de lojas que trocam (pior caso) |
+|---|---|---|---|---|---|
+| Troca de semente | 0,992 | 0,978 | 0 | 0,4 | 1,0 |
+| Reordenação das linhas | 0,990 | 0,968 | 0 | 0,5 | 1,6 |
+| Subamostra de 80% | 0,888 | 0,690 | 5 | 5,4 | 20,6 |
 
-Contra o critério da Fase 1 (ARI médio ≥ 0,80): atendido na troca de semente e na reordenação; **não atendido na subamostra de 80%** (0,754).
+Contra o critério da Fase 1 (ARI médio ≥ 0,80): **atendido nos três testes**. Com 100 subamostras, o ARI médio é de 0,898 e 14% delas ficam abaixo de 0,80.
 
 Estabilidade por loja, em 100 subamostras de 80%:
 
 | Permanência no mesmo cluster | Lojas | % |
 |---|---|---|
-| Acima de 95% | 548 | 49,1 |
-| 80% a 95% | 292 | 26,2 |
-| 50% a 80% | 194 | 17,4 |
-| Até 50% | 81 | 7,3 |
+| Acima de 95% | 861 | 77,2 |
+| 80% a 95% | 130 | 11,7 |
+| 50% a 80% | 119 | 10,7 |
+| Até 50% | 5 | 0,4 |
 
 | Cluster | Permanência média | % de lojas abaixo de 80% |
 |---|---|---|
-| 0 | 0,930 | 12,2 |
-| 1 | 0,777 | 36,1 |
-| 2 | 0,868 | 27,5 |
-| 3 | 0,746 | 42,5 |
-| 4 | 0,888 | 16,0 |
+| 0 | 0,920 | 18,8 |
+| 1 | 0,981 | 2,7 |
+| 2 | 0,934 | 9,2 |
+| 3 | 0,930 | 20,0 |
+| 4 | 0,947 | 9,5 |
 
-- A instabilidade se concentra nos clusters 1 e 3, os mesmos de menor silhueta na Fase 4.
-- Lojas instáveis são as de fronteira: silhueta média de 0,085 nas instáveis (< 80%) contra 0,241 nas estáveis (> 95%); Spearman entre silhueta e permanência de 0,585.
-
-O modelo salvo não é a solução de menor inércia que o K-Means encontra:
-
-| Solução | Inércia | Tamanhos dos clusters |
-|---|---|---|
-| Referência (semente 42, `n_init = 20`) | 3.890,5 | 343, 147, 258, 179, 188 |
-| `n_init = 500` | 3.884,0 | 345, 152, 269, 164, 185 |
-
-A diferença de inércia é de 0,17%, o ARI entre as duas é 0,908 e 53 lojas mudam de cluster. Medida contra a solução de menor inércia, a estabilidade sobe para ARI 0,950 na troca de semente e 0,792 na subamostra de 80%.
+- 124 lojas (11,1%) ficam no mesmo cluster em menos de 80% das subamostras. Elas se concentram nos clusters 0 e 3.
+- Lojas instáveis são as de fronteira: silhueta média de 0,033 nas instáveis (< 80%) contra 0,245 nas estáveis (> 95%); Spearman entre silhueta e permanência de 0,683.
 
 ### 5.2 Os clusters são melhores que o cadastro?
 
@@ -407,34 +415,37 @@ A diferença de inércia é de 0,17%, o ARI entre as duas é 0,908 e 53 lojas mu
 
 | Categoria | ARI | NMI |
 |---|---|---|
-| `tipo_loja` | 0,152 | 0,174 |
-| `sortimento` | 0,038 | 0,045 |
+| `tipo_loja` | 0,118 | 0,148 |
+| `sortimento` | 0,056 | 0,065 |
 
-Os clusters não reconstroem o cadastro. As maiores concentrações: 71,0% das lojas do tipo d estão no cluster 0 e 70,6% das lojas do tipo b estão no cluster 4.
+Os clusters não reconstroem o cadastro. As maiores concentrações: 76,1% das lojas do tipo d estão no cluster 1 e 76,5% das lojas do tipo b estão no cluster 4.
 
-**Teste B — variância explicada (η², em %, métricas em unidade original)**
+**Teste B — variância explicada (η², em %)**
+
+O η² é a parcela da variação de uma métrica explicada pelo grupo da loja (variação entre as médias dos grupos ÷ variação total).
 
 | Métrica | Origem | `tipo_loja` | `sortimento` | Cluster | Aleatório |
 |---|---|---|---|---|---|
-| `venda_media_dia` | no modelo | 2,8 | 2,5 | 14,5 | 0,4 |
-| `ticket_medio` | no modelo | 42,3 | 11,1 | 54,1 | 0,3 |
-| `efeito_promo` | no modelo | 6,0 | 6,9 | 39,2 | 0,3 |
-| `sazonalidade` | no modelo | 2,9 | 5,0 | 41,3 | 0,4 |
-| `pico_sabado` | no modelo | 22,4 | 5,4 | 47,6 | 0,3 |
-| `distancia_concorrente` | no modelo | 2,5 | 2,4 | 19,6 | 0,3 |
-| `clientes_medios_dia` | fora | 25,5 | 10,9 | 25,3 | 0,4 |
-| `volatilidade` | fora | 2,0 | 1,5 | 38,8 | 0,4 |
-| `prop_domingos_abertos` | fora | 70,0 | 37,4 | 3,7 | 0,4 |
+| `venda_media_dia` | no modelo | 2,8 | 2,5 | 28,3 | 0,3 |
+| `ticket_medio` | no modelo | 42,3 | 11,1 | 50,6 | 0,4 |
+| `efeito_promo` | no modelo | 8,4 | 9,3 | 57,8 | 0,4 |
+| `volatilidade` | no modelo | 2,0 | 1,5 | 60,8 | 0,4 |
+| `sazonalidade` | no modelo | 3,1 | 10,1 | 43,2 | 0,3 |
+| `distancia_concorrente` | no modelo | 2,5 | 2,4 | 20,7 | 0,3 |
+| `clientes_medios_dia` | fora | 25,5 | 10,9 | 36,7 | 0,4 |
+| `pico_sabado` | fora | 22,4 | 5,4 | 43,4 | 0,4 |
+| `efeito_promo_dias_uteis` | fora | 6,0 | 6,9 | 29,0 | 0,3 |
+| `prop_domingos_abertos` | fora | 70,0 | 37,4 | 6,6 | 0,4 |
 
 | Média de η² | `tipo_loja` | Cluster |
 |---|---|---|
-| Métricas no modelo | 13,2 | 36,0 |
-| Métricas fora do modelo | 32,5 | 22,6 |
+| Métricas no modelo | 10,2 | 43,6 |
+| Métricas fora do modelo | 31,0 | 28,9 |
 
-- Nas métricas do modelo, os clusters explicam 36,0% contra 13,2% do `tipo_loja`.
-- Fora do modelo, o resultado é misto: os clusters ganham com folga em volatilidade (38,8 contra 2,0), empatam em clientes (25,3 contra 25,5) e perdem em domingos abertos (3,7 contra 70,0). É a perda em domingos que puxa a média fora do modelo para baixo do `tipo_loja`.
-- Com o mesmo número de grupos do `tipo_loja` (k = 4), o padrão se repete: os clusters ganham em 7 das 9 métricas, empatam em clientes (25,1 contra 25,5) e perdem em domingos (1,8 contra 70,0).
-- Os valores diferem dos da seção 4.3 porque lá o η² foi calculado sobre as métricas transformadas (log).
+- Os clusters ganham em 9 das 10 métricas, incluindo 3 que ficaram fora do modelo (clientes, pico de sábado e efeito da promoção em dias úteis).
+- A única derrota é a proporção de domingos abertos (6,6 contra 70,0), coluna retirada do modelo de propósito. É ela que puxa a média fora do modelo para baixo do `tipo_loja`.
+- O ganho não vem do número de grupos: uma divisão aleatória com os mesmos tamanhos explica de 0,3% a 0,4%, e o K-Means com k = 4 (mesmo número de grupos do `tipo_loja`) também ganha em 9 das 10 métricas.
+- Dentro dos clusters, o coeficiente de variação da venda é de 0,284, contra 0,351 dentro do `tipo_loja` e 0,344 na rede inteira.
 
 ### 5.3 Perfil médio de cada cluster
 
@@ -442,17 +453,19 @@ Médias por cluster; a distância é a mediana.
 
 | Métrica | C0 | C1 | C2 | C3 | C4 | Rede |
 |---|---|---|---|---|---|---|
-| Lojas | 343 | 147 | 258 | 179 | 188 | 1.115 |
-| Venda média/dia (R$) | 7.136 | 7.391 | 5.848 | 6.119 | 8.477 | 6.935 |
-| Clientes/dia | 616 | 968 | 631 | 701 | 1.060 | 755 |
-| Ticket médio (R$) | 11,72 | 7,86 | 9,31 | 8,99 | 8,34 | 9,64 |
-| Efeito da promoção | 40,7% | 31,7% | 41,4% | 54,5% | 29,3% | 39,9% |
-| Volatilidade | 0,250 | 0,265 | 0,314 | 0,313 | 0,218 | 0,272 |
-| Sazonalidade | 0,093 | 0,131 | 0,099 | 0,095 | 0,069 | 0,096 |
-| Pico de sábado | 0,969 | 0,936 | 0,587 | 0,744 | 0,833 | 0,817 |
-| Distância mediana | 5.470 | 700 | 5.155 | 350 | 1.135 | 2.325 |
-| `promo_continua` | 62,4% | 46,3% | 43,0% | 68,2% | 29,8% | 51,2% |
-| Lojas que abrem domingo | 3 | 13 | 4 | 0 | 13 | 33 |
+| Lojas | 292 | 414 | 65 | 165 | 179 | 1.115 |
+| Venda média/dia (R$) | 5.719 | 7.084 | 6.312 | 6.125 | 9.545 | 6.935 |
+| Clientes/dia | 693 | 634 | 793 | 630 | 1.235 | 755 |
+| Ticket médio (R$) | 8,43 | 11,35 | 8,24 | 9,78 | 8,04 | 9,64 |
+| Efeito da promoção | 45,4% | 34,9% | 32,0% | 70,8% | 26,3% | 41,4% |
+| Efeito da promoção (dias úteis) | 41,6% | 39,3% | 31,8% | 52,9% | 29,7% | 39,9% |
+| Volatilidade | 0,275 | 0,251 | 0,312 | 0,364 | 0,213 | 0,272 |
+| Sazonalidade | 0,084 | 0,092 | 0,159 | 0,094 | 0,076 | 0,092 |
+| Pico de sábado | 0,750 | 0,921 | 0,891 | 0,524 | 0,931 | 0,817 |
+| Distância mediana | 840 | 5.835 | 2.640 | 4.150 | 770 | 2.325 |
+| `promo_continua` | 50,0% | 57,5% | 53,8% | 55,8% | 33,5% | 51,2% |
+| Proporção de domingos abertos | 0,9% | 0,2% | 13,5% | 1,2% | 7,2% | 2,4% |
+| Lojas que abrem domingo | 3 | 1 | 13 | 3 | 13 | 33 |
 
 Os clusters ainda não têm nome: a nomeação faz parte do critério "interpretável", ainda não executado.
 
@@ -466,36 +479,37 @@ Não iniciado. A pasta `codigo/` (funções reutilizáveis de preparação, feat
 
 ## 7. Onde o projeto está
 
-**Ponto atual:** Fase 5, com três blocos executados (estabilidade, comparação com o baseline e perfil médio).
+**Ponto atual:** Fase 5, com três blocos executados (estabilidade, comparação com o baseline e perfil médio) sobre o modelo revisado.
 
 Situação de cada critério de sucesso da Fase 1:
 
 | Critério | Situação | Evidência até aqui |
 |---|---|---|
-| Estável | Parcial | ARI 0,900 (semente) e 0,907 (reordenação); 0,754 na subamostra de 80%, abaixo de 0,80 |
-| Melhor que o baseline | Executado | η² médio de 36,0% contra 13,2% nas métricas do modelo; 22,6% contra 32,5% fora do modelo |
+| Estável | Atendido | ARI de 0,992 (semente), 0,990 (reordenação) e 0,888 (subamostra de 80%) |
+| Melhor que o baseline | Atendido, com uma ressalva | Ganha em 9 de 10 métricas; perde em domingos abertos, coluna fora do modelo |
 | Interpretável | Em andamento | Perfil médio e centroides prontos; clusters sem nome |
 | Acionável | Pendente | Matriz cluster × área não construída |
-| Quantificado | Pendente | Só a prévia da Fase 4 (gap de R$ 212,53 mi/ano em k = 5); faltam os cenários de captura e as metas somando +5% |
+| Quantificado | Pendente | Só a prévia da Fase 4 (gap de R$ 205,5 mi/ano em k = 5); faltam os cenários de captura e as metas somando +5% |
 
-Pontos em aberto, sem decisão registrada nos notebooks:
+Ressalvas registradas:
 
-- O teste de subamostra não atinge o ARI de 0,80 definido na Fase 1.
-- Existe uma solução de inércia 0,17% menor (`n_init = 500`) que move 53 lojas em relação ao modelo salvo.
+- **O efeito da promoção mistura o padrão semanal.** Os dias sem promoção incluem os sábados; a correlação de `efeito_promo` com `pico_sabado` é de −0,81.
+- **A promoção pesa mais no modelo.** `efeito_promo` e `volatilidade` têm correlação de 0,81 e entram as duas.
+- **O cluster 2 é estável, mas pouco coeso.** Permanência média de 0,934 nas subamostras, com silhueta de 0,079 e 33,8% das lojas com silhueta negativa.
+- **124 lojas de fronteira** trocam de cluster em mais de 20% das subamostras.
 
 Pendências fora da análise:
 
-- **Versionamento:** o último commit cobre as Fases 1 e 2. Ainda não foram commitados os notebooks 04 e 05, a versão atual do notebook 03, as 4 figuras e os 2 artefatos em `modelos/`. Enquanto as figuras não forem commitadas, as imagens deste documento não aparecem no GitHub.
-- **README:** a tabela de status ainda indica a Fase 3 como próxima.
+- **Versionamento:** o último commit é "fases 3, 4 e inicio da 5 do CRISP-DM". A revisão do pipeline ainda não foi commitada: notebooks 03, 04 e 05, as 4 figuras, os 2 artefatos em `modelos/`, o README e este documento.
+- **`base_lojas_transformada.parquet`** é do primeiro modelo e não é mais usada.
 
 ### Artefatos gerados
 
 | Arquivo | Fase | Conteúdo |
 |---|---|---|
-| `dados/processados/base_lojas.parquet` | 3 | 1.115 lojas × 14 colunas, antes das transformações |
-| `dados/processados/base_lojas_transformada.parquet` | 3 | Base com as colunas em log |
-| `dados/processados/X_modelo.parquet` | 3 | 6 features padronizadas |
-| `modelos/escalonador.joblib` | 3 | `StandardScaler` ajustado |
+| `dados/processados/base_lojas.parquet` | 3 | 1.115 lojas × 16 colunas, em unidade original |
+| `dados/processados/X_modelo.parquet` | 3 | 6 features em log1p, padronizadas |
+| `modelos/escalonador.joblib` | 3 | `StandardScaler` ajustado sobre o log1p das 6 features |
 | `modelos/kmeans_k5.joblib` | 4 | K-Means com k = 5 |
 | `dados/processados/base_lojas_clusters.parquet` | 4 | Base com o cluster de cada loja |
 | `relatorios/figuras/03_histogramas_assimetria.png` | 3 | Figura 1 |
