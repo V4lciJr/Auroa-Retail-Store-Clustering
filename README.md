@@ -26,8 +26,8 @@ O resultado atende quatro áreas: **Comercial** (metas por grupo), **Trade marke
 | 2. Entendimento dos Dados | ✅ Concluída | `02_entendimento_dados.ipynb` |
 | 3. Preparação dos Dados | ✅ Concluída | `03_preparacao_dados.ipynb` |
 | 4. Modelagem | ✅ Concluída | `04_modelagem.ipynb` |
-| 5. Avaliação | ⏳ Em andamento | `05_avaliacao.ipynb` |
-| 6. Deploy | — | — |
+| 5. Avaliação | ✅ Concluída | `05_avaliacao.ipynb` |
+| 6. Deploy | ⏳ Em andamento | `06_deploy.ipynb` |
 
 Decisões, descobertas e critérios de cada fase estão em **[docs/documentacao.md](docs/documentacao.md)**.
 
@@ -52,7 +52,13 @@ Decisões, descobertas e critérios de cada fase estão em **[docs/documentacao.
 
 **Revisão do pipeline:** a primeira versão do modelo reprovou no teste de subamostragem (ARI de 0,755). A causa principal foi aplicar log na sazonalidade, o que apagou o grupo das lojas muito sazonais. A comparação entre os pipelines está na seção 3.6 da documentação.
 
-**Em aberto na Fase 5:** nomear os clusters, montar a matriz cluster × área e quantificar o ganho em R$.
+**Clusters:** 0 · Bairro competitivo de cesta pequena · 1 · Destino de cesta grande · 2 · Sazonal · 3 · Dependente de promoção · 4 · Alto fluxo, cesta pequena.
+
+**Oportunidade:** se as lojas abaixo da mediana do próprio cluster recuperarem 25% do gap, a rede ganha R$ 51,4 mi por ano (2,2% do faturamento).
+
+**Plano de metas ([relatorios/plano_metas_lojas.xlsx](relatorios/plano_metas_lojas.xlsx)):** meta de cada loja pela posição dentro do cluster (2% de manutenção + 25% do gap até a mediana), teto de 20% por loja e calibração para a rede somar exatamente +5% ponderado pelo faturamento. Sem a calibração, as metas somariam só 4,19%.
+
+**Em aberto na Fase 6:** enquadramento de lojas novas.
 
 ![Curva do cotovelo e silhueta média por k](relatorios/figuras/04_cotovelo_silhueta.png)
 

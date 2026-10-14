@@ -2,7 +2,7 @@
 
 Segmentação das lojas da Aurora Varejo por comparabilidade real, seguindo o CRISP-DM.
 
-**Status em 07/10/2026:** Fase 5 (Avaliação) em andamento. O ponto exato e as pendências estão na [seção 7](#7-onde-o-projeto-está).
+**Status em 13/10/2026:** Fase 6 (Deploy) em andamento: plano de metas entregue. O ponto exato e as pendências estão na [seção 7](#7-onde-o-projeto-está).
 
 | Fase CRISP-DM | Status | Notebook |
 |---|---|---|
@@ -10,8 +10,8 @@ Segmentação das lojas da Aurora Varejo por comparabilidade real, seguindo o CR
 | 2. Entendimento dos Dados | Concluída | `02_entendimento_dados.ipynb` |
 | 3. Preparação dos Dados | Concluída, com o conjunto de features revisado (seção 3.6) | `03_preparacao_dados.ipynb` |
 | 4. Modelagem | Concluída: K-Means com k = 5 treinado e salvo sobre o conjunto final | `04_modelagem.ipynb` |
-| 5. Avaliação | Em andamento: estabilidade, baseline e perfil médio executados | `05_avaliacao.ipynb` |
-| 6. Deploy | Não iniciada | — |
+| 5. Avaliação | Concluída: os cinco critérios avaliados | `05_avaliacao.ipynb` |
+| 6. Deploy | Em andamento: plano de metas entregue; enquadramento de lojas novas pendente | `06_deploy.ipynb` |
 
 Todos os números deste documento saem das saídas executadas nos notebooks. As figuras ficam em `relatorios/figuras/`; as Fases 2 e 5 não geraram figura (as evidências delas são tabelas).
 
@@ -373,9 +373,9 @@ Variáveis que ficaram fora do modelo:
 
 ---
 
-## 5. Avaliação (em andamento)
+## 5. Avaliação
 
-Notebook: `notebooks/05_avaliacao.ipynb`. Os critérios da Fase 1 são cobrados um por vez sobre o K-Means com k = 5. Executados até aqui: estabilidade, comparação com o baseline e perfil médio. Esta fase ainda não gerou figura.
+Notebook: `notebooks/05_avaliacao.ipynb`. Os critérios da Fase 1 são cobrados um por vez sobre o K-Means com k = 5. Esta fase não gerou figura.
 
 ### 5.1 Estabilidade
 
@@ -467,40 +467,131 @@ Médias por cluster; a distância é a mediana.
 | Proporção de domingos abertos | 0,9% | 0,2% | 13,5% | 1,2% | 7,2% | 2,4% |
 | Lojas que abrem domingo | 3 | 1 | 13 | 3 | 13 | 33 |
 
-Os clusters ainda não têm nome: a nomeação faz parte do critério "interpretável", ainda não executado.
+Os nomes dos clusters estão na seção 5.5.
+
+### 5.4 Onde caíram as 17 lojas do tipo b
+
+O modelo não recebeu `tipo_loja`, mas 13 das 17 lojas do tipo b caíram no cluster 4 (esperado ao acaso: 2,7; p = 4,2 × 10⁻⁸). O que as une é o ticket: 13 delas estão entre os 17 menores tickets da rede.
+
+| Cluster | Lojas do tipo b | % do tipo b | % do cluster |
+|---|---|---|---|
+| 4 | 13 | 76,5% | 7,3% |
+| 2 | 2 | 11,8% | 3,1% |
+| 0 | 2 | 11,8% | 0,7% |
+
+- As 4 que ficaram fora do cluster 4 se separaram por promoção e volatilidade, não por porte: as do cluster 0 têm efeito de promoção de +68,9%; as do cluster 2, de −0,7%.
+- Dentro do cluster 4 elas formam um subgrupo extremo: ticket de R$ 5,18 contra R$ 8,27 das demais lojas do cluster, e 99,6% dos domingos abertos.
+
+### 5.5 Acionável: matriz de decisão
+
+Nenhum par de clusters leva à mesma ação. O par mais próximo (0 e 1, distância de 2,22 entre centroides) se separa por ticket (1,43 desvio) e distância do concorrente. As decisões abaixo são proposta tirada dos números do perfil (seção 5.3).
+
+| Cluster | Nome | Comercial (meta) | Trade (verba de promoção) | Supply (estoque e sortimento) |
+|---|---|---|---|---|
+| 0 | Bairro competitivo de cesta pequena | Benchmark de R$ 5.476/dia; foco em aumentar a cesta (ticket −0,61 desvio) | Verba normal (efeito de +45,4%), contra o concorrente próximo (840 m) | Sortimento básico e competitivo em preço; reposição padrão |
+| 1 | Destino de cesta grande | Benchmark de R$ 6.960/dia; grupo mais homogêneo (CV 0,245); manter ticket e ganhar fluxo | Verba média, só em dias úteis (efeito em dias úteis igual à rede) | Sortimento amplo (concorrente a 5,8 km); reforço no sábado |
+| 2 | Sazonal | Benchmark de R$ 6.325/dia; meta mensal pela curva sazonal; maior gap mediano (25%) | Verba mínima (efeito de 32,0%), só nos meses de pico | Calendário sazonal de estoque (sazonalidade 1,7× a da rede) |
+| 3 | Dependente de promoção | Benchmark de R$ 5.909/dia; meta com a parte promocional separada | Prioridade máxima (efeito de +70,8%; +52,9% em dias úteis) | Estoque de segurança nas semanas de campanha (volatilidade 0,364) |
+| 4 | Alto fluxo, cesta pequena | Benchmark de R$ 8.837/dia; grupo mais disperso (CV 0,341), meta tratada loja a loja | Menor prioridade (efeito de +26,3%) | Reposição frequente de alto giro; sortimento enxuto |
+
+### 5.6 Quantificado: recuperação parcial do gap
+
+Premissas: referência = venda média por dia de operação; benchmark = mediana do próprio cluster; só as 556 lojas abaixo da mediana recuperam; dias de operação no ano = proporção de dias abertos da loja × 365 (média de 302,9); faturamento, não margem.
+
+| Cenário de captura do gap | Ganho anual (R$ mi) | % do faturamento da rede |
+|---|---|---|
+| 100% | 205,5 | 8,76% |
+| 10% | 20,6 | 0,88% |
+| 25% | 51,4 | 2,19% |
+| 50% | 102,8 | 4,38% |
+
+Com a rede inteira ou o `tipo_loja` como referência, o gap seria maior (R$ 228,1 mi e R$ 232,4 mi), porque compararia lojas que não são comparáveis. O gap do cluster é menor e mais defensável: a dispersão da venda dentro dos grupos é de 0,284, contra 0,351 no `tipo_loja`.
 
 ---
 
 ## 6. Deploy
 
-Não iniciado. A pasta `codigo/` (funções reutilizáveis de preparação, features, modelo e inferência) ainda está vazia.
+Notebook: `notebooks/06_deploy.ipynb`. Entrega 1 (plano de metas): `relatorios/plano_metas_lojas.xlsx`, gerado por `codigo/gerar_planilha_metas.py` a partir de `dados/processados/insumo_plano_metas.csv`.
+
+### 6.1 Regra de meta
+
+| Parâmetro | Valor |
+|---|---|
+| Benchmark do grupo | Mediana da venda média por dia do cluster |
+| Gap | (benchmark − venda) ÷ venda; zero para quem está na mediana ou acima |
+| Meta inicial | 2% de manutenção; abaixo da mediana, 2% + 25% do gap |
+| Teto por loja | 20% |
+| Calibração | Fator único, recalculado por iteração para compensar o teto, até a rede somar +5% ponderado pelo faturamento |
+| Prioridade | "Ação" se o gap for ≥ 10%; senão "Acompanhamento" |
+
+### 6.2 Checagem contra o compromisso de +5%
+
+| Etapa | Média simples | Crescimento ponderado | Leitura |
+|---|---|---|---|
+| Metas iniciais | 5,15% | 4,19% | Faltariam 0,81 p.p., ou R$ 19,0 mi por ano: as 559 lojas na mediana ou acima recebem só 2% e são 60,9% do faturamento |
+| Calibradas, sem teto (fator 1,1932) | 6,14% | 5,00% | 46 lojas acima de 20%, com máximo de 37,8% |
+| **Calibradas, com teto de 20% (fator 1,2202)** | **6,05%** | **5,00%** | 47 lojas no teto; manutenção sobe de 2,39% para 2,44% |
+
+O teto tira meta das lojas mais atrasadas (meta média abaixo da mediana: 9,91% → 9,69%) e redistribui o esforço para quem está na mediana ou acima (2,39% → 2,44%). Ganho anual previsto: R$ 117,3 mi.
+
+### 6.3 Distribuição das metas finais
+
+| Faixa | Lojas | % |
+|---|---|---|
+| Manutenção (2,44%) | 559 | 50,1 |
+| Manutenção a 5% | 117 | 10,5 |
+| 5% a 10% | 214 | 19,2 |
+| 10% a 15% | 121 | 10,9 |
+| 15% a 20% | 57 | 5,1 |
+| No teto (20%) | 47 | 4,2 |
+
+| Cluster | Lojas | Lojas em Ação | Meta média | Crescimento ponderado |
+|---|---|---|---|---|
+| 0 | 292 | 106 | 5,86% | 4,87% |
+| 1 | 414 | 152 | 5,83% | 4,93% |
+| 2 | 65 | 25 | 7,10% | 5,66% |
+| 3 | 165 | 64 | 6,29% | 5,05% |
+| 4 | 179 | 70 | 6,28% | 5,05% |
+| Rede | 1.115 | 417 | 6,05% | 5,00% |
+
+### 6.4 Marcações para revisão com o gestor
+
+| Marcação | Regra | Lojas |
+|---|---|---|
+| Subgrupo 7 dias | Cluster 4 e abre aos domingos (as 13 são do tipo b; ticket de R$ 5,18 contra R$ 8,27 no resto do cluster) | 13 |
+| Fronteira de cluster | Ficou no próprio cluster em menos de 80% das 100 subamostras do teste de estabilidade | 122 |
+
+As marcações não mudam a meta calculada; sinalizam lojas cuja referência de pares é menos firme.
+
+Entrega 2 (enquadramento de lojas novas): não iniciada.
 
 ---
 
 ## 7. Onde o projeto está
 
-**Ponto atual:** Fase 5, com três blocos executados (estabilidade, comparação com o baseline e perfil médio) sobre o modelo revisado.
+**Ponto atual:** Fase 6, com o plano de metas entregue. Falta o enquadramento de lojas novas.
 
 Situação de cada critério de sucesso da Fase 1:
 
-| Critério | Situação | Evidência até aqui |
+| Critério | Situação | Evidência |
 |---|---|---|
 | Estável | Atendido | ARI de 0,992 (semente), 0,990 (reordenação) e 0,888 (subamostra de 80%) |
 | Melhor que o baseline | Atendido, com uma ressalva | Ganha em 9 de 10 métricas; perde em domingos abertos, coluna fora do modelo |
-| Interpretável | Em andamento | Perfil médio e centroides prontos; clusters sem nome |
-| Acionável | Pendente | Matriz cluster × área não construída |
-| Quantificado | Pendente | Só a prévia da Fase 4 (gap de R$ 205,5 mi/ano em k = 5); faltam os cenários de captura e as metas somando +5% |
+| Interpretável | Atendido | Cinco clusters nomeados a partir do perfil (seção 5.5) |
+| Acionável | Atendido | Matriz cluster × área sem pares com a mesma ação (seção 5.5) |
+| Quantificado | Atendido | R$ 51,4 mi/ano com 25% de captura do gap; plano de metas fechando +5% (R$ 117,3 mi/ano) |
 
 Ressalvas registradas:
 
 - **O efeito da promoção mistura o padrão semanal.** Os dias sem promoção incluem os sábados; a correlação de `efeito_promo` com `pico_sabado` é de −0,81.
 - **A promoção pesa mais no modelo.** `efeito_promo` e `volatilidade` têm correlação de 0,81 e entram as duas.
 - **O cluster 2 é estável, mas pouco coeso.** Permanência média de 0,934 nas subamostras, com silhueta de 0,079 e 33,8% das lojas com silhueta negativa.
-- **124 lojas de fronteira** trocam de cluster em mais de 20% das subamostras.
+- **122 lojas de fronteira** ficam no próprio cluster em menos de 80% das subamostras; estão marcadas no plano de metas.
+- **O limiar de "Ação" (gap ≥ 10%) e o teto de 20% são escolhas de negócio**, editáveis na planilha.
 
 Pendências fora da análise:
 
-- **Versionamento:** o último commit é "fases 3, 4 e inicio da 5 do CRISP-DM". A revisão do pipeline ainda não foi commitada: notebooks 03, 04 e 05, as 4 figuras, os 2 artefatos em `modelos/`, o README e este documento.
+- **Versionamento:** o último commit é "fases 3, 4 e inicio da 5 do CRISP-DM". Ainda não foram commitados: a revisão do pipeline (notebooks 03, 04 e 05, figuras, artefatos em `modelos/`), o notebook 06, `codigo/gerar_planilha_metas.py`, a planilha de metas, o README e este documento.
 - **`base_lojas_transformada.parquet`** é do primeiro modelo e não é mais usada.
 
 ### Artefatos gerados
@@ -516,6 +607,10 @@ Pendências fora da análise:
 | `relatorios/figuras/03_matriz_correlacao.png` | 3 | Figura 2 |
 | `relatorios/figuras/04_cotovelo_silhueta.png` | 4 | Figura 3 |
 | `relatorios/figuras/04_dendrograma.png` | 4 | Figura 4 |
+| `dados/processados/insumo_plano_metas.csv` | 6 | Entrada da planilha de metas |
+| `dados/processados/plano_metas.csv` | 6 | Plano de metas em CSV |
+| `codigo/gerar_planilha_metas.py` | 6 | Gera a planilha de metas com fórmulas |
+| `relatorios/plano_metas_lojas.xlsx` | 6 | Plano de metas por loja (entrega ao Comercial) |
 
 Os dados em `dados/` não são versionados (`.gitignore`).
 
