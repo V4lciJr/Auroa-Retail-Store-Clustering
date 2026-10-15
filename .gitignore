@@ -24,3 +24,7 @@ estado/
 
 # material do curso (não pode ser publicado)
 docs/*.pdf
+
+# pytest
+.pytest_cache/
+pytest-cache-files-*/

@@ -27,11 +27,11 @@ O resultado atende quatro áreas: **Comercial** (metas por grupo), **Trade marke
 | 3. Preparação dos Dados | ✅ Concluída | `03_preparacao_dados.ipynb` |
 | 4. Modelagem | ✅ Concluída | `04_modelagem.ipynb` |
 | 5. Avaliação | ✅ Concluída | `05_avaliacao.ipynb` |
-| 6. Deploy | ⏳ Em andamento | `06_deploy.ipynb` |
+| 6. Deploy | ✅ Concluída | `06_deploy.ipynb` |
 
 Decisões, descobertas e critérios de cada fase estão em **[docs/documentacao.md](docs/documentacao.md)**.
 
-## Resultados até aqui
+## Resultados
 
 **Features do modelo (6):** venda média por dia, ticket médio, efeito da promoção, volatilidade, sazonalidade e distância ao concorrente, com log1p e padronização (`StandardScaler`).
 
@@ -58,7 +58,7 @@ Decisões, descobertas e critérios de cada fase estão em **[docs/documentacao.
 
 **Plano de metas ([relatorios/plano_metas_lojas.xlsx](relatorios/plano_metas_lojas.xlsx)):** meta de cada loja pela posição dentro do cluster (2% de manutenção + 25% do gap até a mediana), teto de 20% por loja e calibração para a rede somar exatamente +5% ponderado pelo faturamento. Sem a calibração, as metas somariam só 4,19%.
 
-**Em aberto na Fase 6:** enquadramento de lojas novas.
+**Lojas novas:** classificadas nos clusters existentes sem retreinar o modelo. Exigem 12 meses de histórico; de 12 a 23 meses a classificação é provisória e a partir de 24 meses é definitiva (concordância de 96% com o histórico completo).
 
 ![Curva do cotovelo e silhueta média por k](relatorios/figuras/04_cotovelo_silhueta.png)
 
@@ -68,12 +68,15 @@ Decisões, descobertas e critérios de cada fase estão em **[docs/documentacao.
 retail-store-clustering/
 ├── dados/
 │   ├── brutos/          # loja.csv e vendas.csv (não versionados)
-│   └── processados/     # bases geradas pelo pipeline
+│   ├── processados/     # bases geradas pelo pipeline
+│   └── exemplos/        # lojas novas para teste do classificador
 ├── notebooks/           # um notebook por fase do CRISP-DM
-├── codigo/              # módulos Python reutilizáveis (usados no deploy)
-├── modelos/             # artefatos treinados
-├── relatorios/figuras/  # gráficos e entregáveis
+├── codigo/              # pacote de deploy: indicadores, classificador, exportação e CLI
+├── modelos/             # artefatos treinados e o modelo exportado
+├── testes/              # testes automatizados (pytest)
+├── relatorios/          # plano de metas e figuras
 ├── docs/                # documentação do projeto
+├── pyproject.toml       # configuração do pytest
 ├── requirements.txt
 └── README.md
 ```
@@ -99,9 +102,39 @@ pip install -r requirements.txt
 jupyter notebook notebooks/
 ```
 
+## Como classificar uma loja nova
+
+O modelo não é retreinado: o pacote carrega `modelos/modelo_clusterizacao.joblib` (log1p → `StandardScaler` → K-Means já ajustados, mais as regras de uso) e só aplica `transform` e `predict`.
+
+```bash
+# a partir dos indicadores da loja
+python -m codigo.classificar_lojas --indicadores dados/exemplos/lojas_novas.csv --saida relatorios/classificacao_lojas_novas.csv
+
+# a partir do histórico diário (formato de vendas.csv) e do cadastro (formato de loja.csv)
+python -m codigo.classificar_lojas --vendas vendas_lojas_novas.csv --cadastro cadastro_lojas_novas.csv
+```
+
+```python
+import pandas as pd
+from codigo import ClassificadorLojas
+
+classificador = ClassificadorLojas()
+resultado = classificador.classificar_indicadores(pd.read_csv('dados/exemplos/lojas_novas.csv'))
+```
+
+Colunas de entrada: `loja`, `venda_media_dia`, `ticket_medio`, `efeito_promo`, `volatilidade`, `sazonalidade`, `distancia_concorrente` (pode ficar vazia) e `meses_historico`.
+
+A saída traz o status (definitiva, provisória ou não classificada), o cluster e o nome dele, a margem para o segundo cluster mais próximo, os alertas (fronteira, perfil atípico, distância imputada), o benchmark do cluster, o gap e a meta sugerida.
+
+```bash
+python -m pytest   # 14 testes: reproduz os clusters do treino, garante que nada chama fit e valida as entradas
+```
+
+No VS Code, com a extensão Python, os testes aparecem na aba Testing (o `pyproject.toml` já aponta para `testes/`).
+
 ## Tecnologias
 
-Python 3.10 · pandas · numpy · scipy · scikit-learn · matplotlib · seaborn · Jupyter
+Python 3.10 · pandas · numpy · scipy · scikit-learn · matplotlib · seaborn · openpyxl · pytest · Jupyter
 
 ## Autor
 

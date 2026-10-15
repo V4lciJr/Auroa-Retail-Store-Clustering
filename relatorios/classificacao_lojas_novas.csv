@@ -1,0 +1,4 @@
+loja,status,motivo,cluster,nome_cluster,segundo_cluster,margem,distancia_centroide,alertas,venda_media_dia,benchmark_cluster,gap_pct,meta_sugerida_pct,prioridade
+1116,definitiva,,1,Destino de cesta grande,0,0.8973451010932181,0.24836914956033337,,7200,6959.924351302621,0.0,0.024403833984927438,Acompanhamento
+1117,provisória,,2,Sazonal,0,0.9526507192102622,0.1472388837925521,,6100,6324.801026957638,0.036852627370104585,0.035645651488032754,Acompanhamento
+1118,definitiva,,4,"Alto fluxo, cesta pequena",1,0.6498705206939399,0.8367594942220257,distância ao concorrente imputada,9400,8837.105128205128,0.0,0.024403833984927438,Acompanhamento

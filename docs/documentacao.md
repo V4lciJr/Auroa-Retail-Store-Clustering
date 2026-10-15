@@ -2,7 +2,7 @@
 
 Segmentação das lojas da Aurora Varejo por comparabilidade real, seguindo o CRISP-DM.
 
-**Status em 13/10/2026:** Fase 6 (Deploy) em andamento: plano de metas entregue. O ponto exato e as pendências estão na [seção 7](#7-onde-o-projeto-está).
+**Status em 15/10/2026:** Fase 6 (Deploy) concluída: plano de metas e classificador de lojas novas entregues. O ponto exato e as pendências estão na [seção 7](#7-onde-o-projeto-está).
 
 | Fase CRISP-DM | Status | Notebook |
 |---|---|---|
@@ -11,7 +11,7 @@ Segmentação das lojas da Aurora Varejo por comparabilidade real, seguindo o CR
 | 3. Preparação dos Dados | Concluída, com o conjunto de features revisado (seção 3.6) | `03_preparacao_dados.ipynb` |
 | 4. Modelagem | Concluída: K-Means com k = 5 treinado e salvo sobre o conjunto final | `04_modelagem.ipynb` |
 | 5. Avaliação | Concluída: os cinco critérios avaliados | `05_avaliacao.ipynb` |
-| 6. Deploy | Em andamento: plano de metas entregue; enquadramento de lojas novas pendente | `06_deploy.ipynb` |
+| 6. Deploy | Concluída: plano de metas (entrega 1) e classificador de lojas novas em `codigo/` (entrega 2) | `06_deploy.ipynb` |
 
 Todos os números deste documento saem das saídas executadas nos notebooks. As figuras ficam em `relatorios/figuras/`; as Fases 2 e 5 não geraram figura (as evidências delas são tabelas).
 
@@ -563,13 +563,68 @@ O teto tira meta das lojas mais atrasadas (meta média abaixo da mediana: 9,91% 
 
 As marcações não mudam a meta calculada; sinalizam lojas cuja referência de pares é menos firme.
 
-Entrega 2 (enquadramento de lojas novas): não iniciada.
+### 6.5 Entrega 2: enquadramento de lojas novas
+
+Uma loja nova é classificada com o escalonador e o K-Means já treinados: calcula-se os seis indicadores do histórico dela com as mesmas regras do treino, aplica-se log1p, o `StandardScaler` salvo e o `predict` do K-Means. Nada é reajustado. O pipeline e as regras de uso ficam num artefato único, `modelos/modelo_clusterizacao.joblib`, com cópia legível em `modelos/modelo_clusterizacao.json`.
+
+**Checagens de equivalência:**
+
+| Checagem | Resultado |
+|---|---|
+| Indicadores recalculados de `vendas.csv` e `loja.csv` pelo pacote × base do treino | Maior diferença absoluta: 1,2e-16 |
+| Clusters das 1.115 lojas pelo pacote × clusters do treino | 1.115 de 1.115 iguais |
+| Regra de meta exportada × coluna `meta_pct` do plano de metas | Igual em todas as lojas |
+| Hash dos artefatos do treino antes e depois do deploy (11 arquivos) | Idênticos |
+
+**Histórico mínimo.** Cada loja foi recortada para os primeiros N meses de operação e para os últimos N meses, como se fosse nova, e o cluster foi comparado com o do histórico completo:
+
+| Meses de histórico | Concordância (primeiros meses) | Concordância (últimos meses) | Pior cluster (primeiros) | Pior cluster (últimos) |
+|---|---|---|---|---|
+| 3 | 83,2% | 73,7% | 35,4% | 12,3% |
+| 6 | 36,3% | 80,4% | 14,5% | 16,9% |
+| 9 | 83,8% | 81,5% | 41,5% | 18,5% |
+| 12 | 86,7% | 88,0% | 81,5% | 41,5% |
+| 18 | 87,3% | 91,0% | 81,0% | 53,8% |
+| 24 | 96,6% | 96,1% | 95,0% | 64,6% |
+
+Com menos de 12 meses, a sazonalidade não cobre o ano e algum cluster é praticamente sorteado. O cluster mais sensível é o Sazonal (2): com os últimos 12 meses, só 41,5% das lojas dele voltam ao próprio cluster.
+
+**Regras de uso exportadas:**
+
+| Regra | Valor | Evidência |
+|---|---|---|
+| Não classifica | histórico menor que 12 meses | Pior cluster com no máximo 41,5% de acerto |
+| Classificação provisória | 12 a 23 meses | Concordância de 86,7% a 91,0% |
+| Classificação definitiva | 24 meses ou mais | Concordância de 96,6% e 96,1% |
+| Alerta "fronteira de cluster" | margem (d2 − d1) / d2 < 0,10 | Maior F1 (0,623) contra as 122 lojas de baixa permanência; marca 154 lojas e pega 70,5% delas |
+| Alerta "perfil atípico" | distância ao centroide acima do percentil 99 do cluster no treino | Limites de 2,61 (cluster 1) a 6,08 (cluster 2) |
+| Alerta "distância imputada" | distância ao concorrente vazia | Imputada com a mediana do treino (2.325), como nas lojas 291, 622 e 879 |
+| Meta sugerida | mesma regra do plano: (2% + 25% do gap) × 1,2202, teto de 20% | A loja nova não recalibra o plano da rede |
+
+**Como usar:**
+
+```bash
+# indicadores já calculados (um registro por loja)
+python -m codigo.classificar_lojas --indicadores dados/exemplos/lojas_novas.csv --saida relatorios/classificacao_lojas_novas.csv
+# histórico diário no formato de vendas.csv + cadastro no formato de loja.csv
+python -m codigo.classificar_lojas --vendas vendas_lojas_novas.csv --cadastro cadastro_lojas_novas.csv
+# testes
+python -m pytest
+```
+
+Teste com as três lojas de exemplo (`dados/exemplos/lojas_novas.csv`):
+
+| Loja | Status | Cluster | Margem | Alertas | Meta sugerida |
+|---|---|---|---|---|---|
+| 1116 | definitiva (30 meses) | 1 · Destino de cesta grande | 0,897 | — | 2,44% |
+| 1117 | provisória (15 meses) | 2 · Sazonal | 0,953 | — | 3,56% |
+| 1118 | definitiva (26 meses) | 4 · Alto fluxo, cesta pequena | 0,650 | distância ao concorrente imputada | 2,44% |
 
 ---
 
 ## 7. Onde o projeto está
 
-**Ponto atual:** Fase 6, com o plano de metas entregue. Falta o enquadramento de lojas novas.
+**Ponto atual:** Fase 6 concluída. Plano de metas entregue e classificador de lojas novas pronto em `codigo/`, com 14 testes automatizados passando.
 
 Situação de cada critério de sucesso da Fase 1:
 
@@ -588,10 +643,11 @@ Ressalvas registradas:
 - **O cluster 2 é estável, mas pouco coeso.** Permanência média de 0,934 nas subamostras, com silhueta de 0,079 e 33,8% das lojas com silhueta negativa.
 - **122 lojas de fronteira** ficam no próprio cluster em menos de 80% das subamostras; estão marcadas no plano de metas.
 - **O limiar de "Ação" (gap ≥ 10%) e o teto de 20% são escolhas de negócio**, editáveis na planilha.
+- **Loja nova com 12 a 23 meses de histórico tem classificação provisória**; o cluster Sazonal é o que mais muda até 24 meses.
 
 Pendências fora da análise:
 
-- **Versionamento:** o último commit é "fases 3, 4 e inicio da 5 do CRISP-DM". Ainda não foram commitados: a revisão do pipeline (notebooks 03, 04 e 05, figuras, artefatos em `modelos/`), o notebook 06, `codigo/gerar_planilha_metas.py`, a planilha de metas, o README e este documento.
+- **Versionamento:** o último commit é "avaliacao final dos clusters e inicio do deploy do modelo". Ainda não foram commitados: o pacote de deploy em `codigo/`, `testes/`, `modelos/modelo_clusterizacao.*`, `dados/exemplos/`, `pyproject.toml`, a seção 8 do notebook 06, o `requirements.txt`, o README e este documento. A pasta `.vscode/` fica fora do Git (`.gitignore`).
 - **`base_lojas_transformada.parquet`** é do primeiro modelo e não é mais usada.
 
 ### Artefatos gerados
@@ -611,11 +667,20 @@ Pendências fora da análise:
 | `dados/processados/plano_metas.csv` | 6 | Plano de metas em CSV |
 | `codigo/gerar_planilha_metas.py` | 6 | Gera a planilha de metas com fórmulas |
 | `relatorios/plano_metas_lojas.xlsx` | 6 | Plano de metas por loja (entrega ao Comercial) |
+| `modelos/modelo_clusterizacao.joblib` | 6 | Pipeline (log1p → escalonador → K-Means) e regras de uso, sem novo ajuste |
+| `modelos/modelo_clusterizacao.json` | 6 | Cópia legível das definições do modelo |
+| `codigo/configuracao.py`, `indicadores.py`, `classificador.py` | 6 | Pacote de classificação de lojas novas |
+| `codigo/exportar_modelo.py` | 6 | Monta o artefato único a partir dos objetos treinados |
+| `codigo/classificar_lojas.py` | 6 | Linha de comando do classificador |
+| `testes/test_classificador.py` | 6 | 14 testes (equivalência com o treino, ausência de `fit`, validações) |
+| `dados/exemplos/lojas_novas.csv` | 6 | Três lojas novas para teste |
 
-Os dados em `dados/` não são versionados (`.gitignore`).
+Os dados em `dados/brutos/` e `dados/processados/` não são versionados (`.gitignore`); `dados/exemplos/` é versionado.
 
 ---
 
 ## 8. Ambiente
 
-Python 3.10 · pandas 2.3.3 · numpy 2.2.6 · scipy 1.15.3 · scikit-learn 1.7.2 · matplotlib 3.10.9 · seaborn 0.13.2 · `SEED = 42`
+Python 3.10 · pandas 2.3.3 · numpy 2.2.6 · scipy 1.15.3 · scikit-learn 1.7.2 · matplotlib 3.10.9 · seaborn 0.13.2 · openpyxl 3.1.5 · pytest 8.4.2 · `SEED = 42`
+
+O artefato do modelo foi salvo com scikit-learn 1.7.2; carregar com outra versão pode falhar ou mudar resultados.

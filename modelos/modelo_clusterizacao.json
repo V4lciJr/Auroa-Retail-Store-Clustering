@@ -1,0 +1,66 @@
+{
+  "versao": "1.0.0",
+  "data_exportacao": "2026-10-15",
+  "features": [
+    "venda_media_dia",
+    "ticket_medio",
+    "efeito_promo",
+    "volatilidade",
+    "sazonalidade",
+    "distancia_concorrente"
+  ],
+  "transformacao": "log1p nas seis features -> StandardScaler -> KMeans (k=5)",
+  "mediana_distancia_concorrente": 2325.0,
+  "clusters": {
+    "0": {
+      "nome": "Bairro competitivo de cesta pequena",
+      "lojas_no_treino": 292,
+      "benchmark_venda_media_dia": 5476.370334620335,
+      "limite_distancia_atipica": 3.191668092195348
+    },
+    "1": {
+      "nome": "Destino de cesta grande",
+      "lojas_no_treino": 414,
+      "benchmark_venda_media_dia": 6959.924351302621,
+      "limite_distancia_atipica": 2.6109280301980213
+    },
+    "2": {
+      "nome": "Sazonal",
+      "lojas_no_treino": 65,
+      "benchmark_venda_media_dia": 6324.801026957638,
+      "limite_distancia_atipica": 6.078841253792753
+    },
+    "3": {
+      "nome": "Dependente de promoção",
+      "lojas_no_treino": 165,
+      "benchmark_venda_media_dia": 5909.244871794872,
+      "limite_distancia_atipica": 3.3700238333300634
+    },
+    "4": {
+      "nome": "Alto fluxo, cesta pequena",
+      "lojas_no_treino": 179,
+      "benchmark_venda_media_dia": 8837.105128205128,
+      "limite_distancia_atipica": 3.8106616652510046
+    }
+  },
+  "regras_meta": {
+    "meta_manutencao": 0.02,
+    "captura_gap": 0.25,
+    "limiar_acao": 0.1,
+    "fator_calibracao": 1.220191699246372,
+    "teto": 0.2
+  },
+  "regras_uso": {
+    "meses_minimos": 12,
+    "meses_definitiva": 24,
+    "limiar_margem_fronteira": 0.1,
+    "percentil_atipico": 0.99
+  },
+  "origem": {
+    "escalonador_sha256": "bf407c0a9dbbf9b035e69c27c49d786175e9603b92a8bd236571431e4ef408ad",
+    "kmeans_sha256": "043df6f2ad82848a77b5f4b33bd5e10cbade3b480c8511b2cf6436b274ecea07",
+    "scikit_learn": "1.7.2",
+    "pandas": "2.3.3",
+    "numpy": "2.2.6"
+  }
+}
